@@ -151,6 +151,8 @@ resource "jiraassets_object_type_attribute" "on_call" {
 
 Import is supported using the following syntax:
 
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
 ```shell
 # Attributes have no single-object GET, so the parent object type id is part of
 # the import id: "objectTypeId/attributeId".
