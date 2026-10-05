@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/ctreminiom/go-atlassian/v2/pkg/infra/models"
@@ -32,7 +33,11 @@ var (
 	_ resource.ResourceWithConfigure      = &objectTypeAttributeResource{}
 	_ resource.ResourceWithImportState    = &objectTypeAttributeResource{}
 	_ resource.ResourceWithValidateConfig = &objectTypeAttributeResource{}
+	_ resource.ResourceWithModifyPlan     = &objectTypeAttributeResource{}
 )
+
+// maxUniqueAttributes is how many unique attributes the API allows per object type.
+const maxUniqueAttributes = 2
 
 // NewObjectTypeAttributeResource is a helper function to simplify the provider implementation.
 func NewObjectTypeAttributeResource() resource.Resource {
@@ -77,6 +82,9 @@ var (
 	schemaPathDataType     = path.Root("data_type")
 	schemaPathTypeValue    = path.Root("type_value")
 	schemaPathOptions      = path.Root("options")
+	schemaPathLabel        = path.Root("label")
+	schemaPathUnique       = path.Root("unique_attribute")
+	schemaPathRefTypeId    = path.Root("reference_type_id")
 
 	schemaPathIncludeChildren = path.Root("include_child_object_types")
 )
@@ -267,6 +275,24 @@ func (r *objectTypeAttributeResource) ValidateConfig(ctx context.Context, req re
 		)
 	}
 
+	// Like data_type, the API ignores these on anything but a reference.
+	if attrType != attrTypeObjectReference {
+		if !config.TypeValue.IsNull() && !config.TypeValue.IsUnknown() {
+			resp.Diagnostics.AddAttributeError(
+				schemaPathTypeValue,
+				"Unexpected type_value",
+				fmt.Sprintf("type_value only applies when type is %s, but type is %s.", attrTypeObjectReference, attrType),
+			)
+		}
+		if !config.ReferenceTypeId.IsNull() && !config.ReferenceTypeId.IsUnknown() {
+			resp.Diagnostics.AddAttributeError(
+				schemaPathRefTypeId,
+				"Unexpected reference_type_id",
+				fmt.Sprintf("reference_type_id only applies when type is %s, but type is %s.", attrTypeObjectReference, attrType),
+			)
+		}
+	}
+
 	if !config.DataType.IsUnknown() {
 		isSelect := attrType == attrTypeDefault && config.DataType.ValueString() == dataTypeSelect
 		if isSelect && config.Options.IsNull() {
@@ -285,6 +311,16 @@ func (r *objectTypeAttributeResource) ValidateConfig(ctx context.Context, req re
 		}
 	}
 
+	// The API rejects a unique attribute that can hold more than one value. Null
+	// means the schema default of 1.
+	if config.UniqueAttribute.ValueBool() && !config.MaximumCardinality.IsNull() && !config.MaximumCardinality.IsUnknown() && config.MaximumCardinality.ValueInt64() != 1 {
+		resp.Diagnostics.AddAttributeError(
+			schemaPathUnique,
+			"Unique attribute must be single-valued",
+			fmt.Sprintf("unique_attribute requires maximum_cardinality = 1, but it is %d.", config.MaximumCardinality.ValueInt64()),
+		)
+	}
+
 	// Nothing to descend into when the attribute does not point at an object type.
 	if attrType != attrTypeObjectReference && config.IncludeChildren.ValueBool() {
 		resp.Diagnostics.AddAttributeError(
@@ -293,6 +329,76 @@ func (r *objectTypeAttributeResource) ValidateConfig(ctx context.Context, req re
 			fmt.Sprintf("include_child_object_types only applies when type is %s, but type is %s.", attrTypeObjectReference, attrType),
 		)
 	}
+}
+
+// ModifyPlan checks what depends on the object type's other attributes. It only
+// sees what already exists: attributes created in the same apply are not counted,
+// and an object type that does not exist yet is not checked at all.
+func (r *objectTypeAttributeResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() || r.client == nil {
+		return
+	}
+
+	var plan objectTypeAttributeResourceModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() || plan.ObjectTypeId.IsUnknown() {
+		return
+	}
+
+	var state *objectTypeAttributeResourceModel
+	if !req.State.Raw.IsNull() {
+		state = &objectTypeAttributeResourceModel{}
+		resp.Diagnostics.Append(req.State.Get(ctx, state)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		// A replacement onto another object type starts from nothing there.
+		if state.ObjectTypeId.ValueString() != plan.ObjectTypeId.ValueString() {
+			state = nil
+		}
+	}
+
+	becomesUnique := plan.UniqueAttribute.ValueBool() && (state == nil || !state.UniqueAttribute.ValueBool())
+	becomesLabel := plan.Label.ValueBool() && (state == nil || !state.Label.ValueBool())
+	if !becomesUnique && !becomesLabel {
+		return
+	}
+
+	objectTypeId := plan.ObjectTypeId.ValueString()
+
+	inventory, diags := attributeInventoryFor(ctx, r.client, r.workspace_id, objectTypeId)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if becomesLabel && inventory.inheritedLabel != nil {
+		resp.Diagnostics.AddAttributeError(schemaPathLabel, inheritedLabelSummary, inheritedLabelDetail(objectTypeId, inventory.inheritedLabel))
+	}
+
+	if becomesUnique {
+		var unique []string
+		for _, attribute := range inventory.ownById {
+			if attribute.UniqueAttribute && (state == nil || attribute.ID != state.Id.ValueString()) {
+				unique = append(unique, fmt.Sprintf("%q (id %s)", attribute.Name, attribute.ID))
+			}
+		}
+		if len(unique) >= maxUniqueAttributes {
+			sort.Strings(unique)
+			resp.Diagnostics.AddAttributeError(
+				schemaPathUnique,
+				"Too many unique attributes",
+				fmt.Sprintf("Object type %s already has %d unique attributes (%s), and the API allows at most %d.", objectTypeId, len(unique), strings.Join(unique, ", "), maxUniqueAttributes),
+			)
+		}
+	}
+}
+
+const inheritedLabelSummary = "Cannot label an attribute on an inherited child object type"
+
+func inheritedLabelDetail(objectTypeId string, label *models.ObjectTypeAttributeScheme) string {
+	return fmt.Sprintf("Object type %s inherits its attributes from object type %s, which holds the label as %q (id %s). The API refuses a label on the child. Declare the label on the object type that owns the attributes; every child shows it.",
+		objectTypeId, label.ObjectType.ID, label.Name, label.ID)
 }
 
 // Create adopts an existing non-removable attribute where one collides, and
@@ -391,11 +497,7 @@ func (r *objectTypeAttributeResource) findAdoptee(ctx context.Context, plan obje
 	// "Impossible to set child's attribute as label if inheritance": the label
 	// belongs to whichever object type owns the attributes.
 	if plan.Label.ValueBool() && inventory.inheritedLabel != nil {
-		diags.AddError(
-			"Cannot label an attribute on an inherited child object type",
-			fmt.Sprintf("Object type %s inherits its attributes from object type %s, which holds the label as %q (id %s). The API refuses a label on the child. Declare the label on the object type that owns the attributes; every child shows it.",
-				objectTypeId, inventory.inheritedLabel.ObjectType.ID, inventory.inheritedLabel.Name, inventory.inheritedLabel.ID),
-		)
+		diags.AddError(inheritedLabelSummary, inheritedLabelDetail(objectTypeId, inventory.inheritedLabel))
 		return nil, diags
 	}
 
