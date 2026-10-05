@@ -2,9 +2,7 @@ package provider
 
 import (
 	"context"
-	"fmt"
 
-	"github.com/ctreminiom/go-atlassian/v2/assets"
 	"github.com/ctreminiom/go-atlassian/v2/pkg/infra/models"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -31,8 +29,7 @@ func NewObjectResource() resource.Resource {
 
 // objectResource is the resource implementation.
 type objectResource struct {
-	client       *assets.Client
-	workspace_id string
+	apiClient
 }
 
 // Metadata returns the resource type name.
@@ -181,18 +178,11 @@ func (r *objectResource) Create(ctx context.Context, req resource.CreateRequest,
 
 	object, response, err := r.client.Object.Create(ctx, r.workspace_id, payload)
 	if err != nil {
-		if response != nil {
-			tflog.Error(ctx, "Error creating object: %s", map[string]interface{}{
-				"url":         response.Request.URL,
-				"status_code": response.StatusCode,
-				"headers":     response.Header,
-				"body":        response.Body,
-			})
-		}
+		logAPIError(ctx, "Error creating object", response)
 
 		resp.Diagnostics.AddError(
 			"Error during object creation",
-			err.Error(),
+			apiError(err, response),
 		)
 		return
 	}
@@ -228,18 +218,11 @@ func (r *objectResource) Read(ctx context.Context, req resource.ReadRequest, res
 	// Get refreshed object from Assets API
 	object, response, err := r.client.Object.Get(ctx, r.workspace_id, state.Id.ValueString())
 	if err != nil {
-		if response != nil {
-			tflog.Error(ctx, "Error reading object: %s", map[string]interface{}{
-				"url":         response.Request.URL,
-				"status_code": response.StatusCode,
-				"headers":     response.Header,
-				"body":        response.Body,
-			})
-		}
+		logAPIError(ctx, "Error reading object", response)
 
 		resp.Diagnostics.AddError(
 			"Error during object reading",
-			err.Error(),
+			apiError(err, response),
 		)
 		return
 	}
@@ -247,17 +230,10 @@ func (r *objectResource) Read(ctx context.Context, req resource.ReadRequest, res
 	// Get refreshed object attributes from Assets API
 	attrs, response, err := r.client.Object.Attributes(ctx, r.workspace_id, state.Id.ValueString())
 	if err != nil {
-		if response != nil {
-			tflog.Error(ctx, "Error reading object attributes: %s", map[string]interface{}{
-				"url":         response.Request.URL,
-				"status_code": response.StatusCode,
-				"headers":     response.Header,
-				"body":        response.Body,
-			})
-		}
+		logAPIError(ctx, "Error reading object attributes", response)
 		resp.Diagnostics.AddError(
 			"Error during object attributes reading",
-			err.Error(),
+			apiError(err, response),
 		)
 		return
 	}
@@ -339,18 +315,11 @@ func (r *objectResource) Update(ctx context.Context, req resource.UpdateRequest,
 	})
 	object, response, err := r.client.Object.Update(ctx, r.workspace_id, plan.Id.ValueString(), payload)
 	if err != nil {
-		if response != nil {
-			tflog.Error(ctx, "Error updating object: %s", map[string]interface{}{
-				"url":         response.Request.URL,
-				"status_code": response.StatusCode,
-				"headers":     response.Header,
-				"body":        response.Body,
-			})
-		}
+		logAPIError(ctx, "Error updating object", response)
 
 		resp.Diagnostics.AddError(
 			"Error during object update",
-			err.Error(),
+			apiError(err, response),
 		)
 		return
 	}
@@ -385,18 +354,11 @@ func (r *objectResource) Delete(ctx context.Context, req resource.DeleteRequest,
 	// Delete existing object
 	response, err := r.client.Object.Delete(ctx, r.workspace_id, state.Id.ValueString())
 	if err != nil {
-		if response != nil {
-			tflog.Error(ctx, "Error deleting object: %s", map[string]interface{}{
-				"url":         response.Request.URL,
-				"status_code": response.StatusCode,
-				"headers":     response.Header,
-				"body":        response.Body,
-			})
-		}
+		logAPIError(ctx, "Error deleting object", response)
 
 		resp.Diagnostics.AddError(
 			"Error during object deletion",
-			err.Error(),
+			apiError(err, response),
 		)
 		return
 	}
@@ -407,20 +369,6 @@ func (r *objectResource) ImportState(ctx context.Context, req resource.ImportSta
 }
 
 // Configure configures the resource with the given configuration.
-func (r *objectResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	providerClient, ok := req.ProviderData.(JiraAssetsProviderClient)
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected Data Source Configure Type",
-			fmt.Sprintf("Expected *assets.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
-		)
-		return
-	}
-
-	r.client = providerClient.client
-	r.workspace_id = providerClient.workspaceId
+func (r *objectResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	r.configure(req.ProviderData, &resp.Diagnostics)
 }

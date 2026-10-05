@@ -5,9 +5,11 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
@@ -221,4 +223,28 @@ func (p *JiraAssetsProvider) DataSources(ctx context.Context) []func() datasourc
 	return []func() datasource.DataSource{
 		NewObjectSchemaDataSource,
 	}
+}
+
+// apiClient is embedded by every resource and data source for the configured client.
+type apiClient struct {
+	client       *assets.Client
+	workspace_id string
+}
+
+func (c *apiClient) configure(providerData any, diags *diag.Diagnostics) {
+	if providerData == nil {
+		return
+	}
+
+	providerClient, ok := providerData.(JiraAssetsProviderClient)
+	if !ok {
+		diags.AddError(
+			"Unexpected Provider Data Type",
+			fmt.Sprintf("Expected JiraAssetsProviderClient, got: %T. Please report this issue to the provider developers.", providerData),
+		)
+		return
+	}
+
+	c.client = providerClient.client
+	c.workspace_id = providerClient.workspaceId
 }

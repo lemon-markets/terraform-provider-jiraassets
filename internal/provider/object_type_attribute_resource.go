@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ctreminiom/go-atlassian/v2/assets"
 	"github.com/ctreminiom/go-atlassian/v2/pkg/infra/models"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -39,8 +38,7 @@ func NewObjectTypeAttributeResource() resource.Resource {
 
 // objectTypeAttributeResource is the resource implementation.
 type objectTypeAttributeResource struct {
-	client       *assets.Client
-	workspace_id string
+	apiClient
 }
 
 func (r *objectTypeAttributeResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -513,22 +511,8 @@ func (r *objectTypeAttributeResource) ImportState(ctx context.Context, req resou
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, schemaPathId, parts[1])...)
 }
 
-func (r *objectTypeAttributeResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	providerClient, ok := req.ProviderData.(JiraAssetsProviderClient)
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected *assets.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
-		)
-		return
-	}
-
-	r.client = providerClient.client
-	r.workspace_id = providerClient.workspaceId
+func (r *objectTypeAttributeResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	r.configure(req.ProviderData, &resp.Diagnostics)
 }
 
 func objectTypeAttributePayloadFromModel(m objectTypeAttributeResourceModel) (*models.ObjectTypeAttributePayloadScheme, diag.Diagnostics) {

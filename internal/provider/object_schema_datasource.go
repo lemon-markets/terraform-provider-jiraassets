@@ -2,9 +2,7 @@ package provider
 
 import (
 	"context"
-	"fmt"
 
-	"github.com/ctreminiom/go-atlassian/v2/assets"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -23,8 +21,7 @@ func NewObjectSchemaDataSource() datasource.DataSource {
 
 // objectSchemaDataSource is the data source implementation.
 type objectSchemaDataSource struct {
-	client       *assets.Client
-	workspace_id string
+	apiClient
 }
 
 // Metadata returns the data source type name.
@@ -116,7 +113,7 @@ func (d *objectSchemaDataSource) Read(ctx context.Context, req datasource.ReadRe
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to read Assets object schema",
-			err.Error(),
+			apiError(err, schemaResp),
 		)
 		return
 	}
@@ -153,20 +150,6 @@ func (d *objectSchemaDataSource) Read(ctx context.Context, req datasource.ReadRe
 	}
 }
 
-func (d *objectSchemaDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	providerClient, ok := req.ProviderData.(JiraAssetsProviderClient)
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected Data Source Configure Type",
-			fmt.Sprintf("Expected *assets.Client, got %T", req.ProviderData),
-		)
-		return
-	}
-
-	d.client = providerClient.client
-	d.workspace_id = providerClient.workspaceId
+func (d *objectSchemaDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
+	d.configure(req.ProviderData, &resp.Diagnostics)
 }

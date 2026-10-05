@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ctreminiom/go-atlassian/v2/assets"
 	"github.com/ctreminiom/go-atlassian/v2/pkg/infra/models"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/mapvalidator"
@@ -20,7 +19,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
@@ -43,8 +41,7 @@ func NewObjectTypeResource() resource.Resource {
 
 // objectTypeResource is the resource implementation.
 type objectTypeResource struct {
-	client       *assets.Client
-	workspace_id string
+	apiClient
 }
 
 func (r *objectTypeResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -245,18 +242,11 @@ func (r *objectTypeResource) Create(ctx context.Context, req resource.CreateRequ
 
 	objectType, response, err := r.client.ObjectType.Create(ctx, r.workspace_id, payload)
 	if err != nil {
-		if response != nil {
-			tflog.Error(ctx, "Error creating object type: %s", map[string]interface{}{
-				"url":         response.Request.URL,
-				"status_code": response.StatusCode,
-				"headers":     response.Header,
-				"body":        response.Body,
-			})
-		}
+		logAPIError(ctx, "Error creating object type", response)
 
 		resp.Diagnostics.AddError(
 			"Error during object type creation",
-			err.Error(),
+			apiError(err, response),
 		)
 		return
 	}
@@ -308,18 +298,11 @@ func (r *objectTypeResource) Read(ctx context.Context, req resource.ReadRequest,
 
 	objectType, response, err := r.client.ObjectType.Get(ctx, r.workspace_id, state.Id.ValueString())
 	if err != nil {
-		if response != nil {
-			tflog.Error(ctx, "Error reading object type: %s", map[string]interface{}{
-				"url":         response.Request.URL,
-				"status_code": response.StatusCode,
-				"headers":     response.Header,
-				"body":        response.Body,
-			})
-		}
+		logAPIError(ctx, "Error reading object type", response)
 
 		resp.Diagnostics.AddError(
 			"Error during object type reading",
-			err.Error(),
+			apiError(err, response),
 		)
 		return
 	}
@@ -406,18 +389,11 @@ func (r *objectTypeResource) Delete(ctx context.Context, req resource.DeleteRequ
 
 	_, response, err := r.client.ObjectType.Delete(ctx, r.workspace_id, state.Id.ValueString())
 	if err != nil {
-		if response != nil {
-			tflog.Error(ctx, "Error deleting object type: %s", map[string]interface{}{
-				"url":         response.Request.URL,
-				"status_code": response.StatusCode,
-				"headers":     response.Header,
-				"body":        response.Body,
-			})
-		}
+		logAPIError(ctx, "Error deleting object type", response)
 
 		resp.Diagnostics.AddError(
 			"Error during object type deletion",
-			err.Error(),
+			apiError(err, response),
 		)
 		return
 	}
@@ -427,22 +403,8 @@ func (r *objectTypeResource) ImportState(ctx context.Context, req resource.Impor
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-func (r *objectTypeResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	providerClient, ok := req.ProviderData.(JiraAssetsProviderClient)
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected *assets.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
-		)
-		return
-	}
-
-	r.client = providerClient.client
-	r.workspace_id = providerClient.workspaceId
+func (r *objectTypeResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	r.configure(req.ProviderData, &resp.Diagnostics)
 }
 
 func objectTypeModelFromScheme(o *models.ObjectTypeScheme) objectTypeResourceModel {

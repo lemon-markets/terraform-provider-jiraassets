@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"regexp"
 
-	"github.com/ctreminiom/go-atlassian/v2/assets"
 	"github.com/ctreminiom/go-atlassian/v2/pkg/infra/models"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -17,7 +16,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
-	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 // hexColorRegexp matches the hex color strings the reference type color field accepts.
@@ -58,8 +56,7 @@ func NewReferenceTypeResource() resource.Resource {
 
 // referenceTypeResource is the resource implementation.
 type referenceTypeResource struct {
-	client       *assets.Client
-	workspace_id string
+	apiClient
 }
 
 func (r *referenceTypeResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -80,7 +77,7 @@ type referenceTypeResourceModel struct {
 // Schema defines the schema for the resource.
 func (r *referenceTypeResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "A Jira Assets reference type resource, used to describe the relationship an object reference attribute represents. Hand-rolled: the config/referencetype endpoint has no go-atlassian connector support.",
+		Description: "A Jira Assets reference type, naming the relationship an object reference attribute represents.",
 		Attributes: map[string]schema.Attribute{
 			"workspace_id": schema.StringAttribute{
 				Computed: true,
@@ -149,11 +146,12 @@ func (r *referenceTypeResource) Create(ctx context.Context, req resource.CreateR
 		ObjectSchemaID: plan.ObjectSchemaId.ValueString(),
 	}
 
-	referenceType, err := r.createReferenceType(ctx, payload)
+	referenceType := new(referenceTypeScheme)
+	response, err := r.call(ctx, http.MethodPost, "", payload, referenceType)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error during reference type creation",
-			err.Error(),
+			apiError(err, response),
 		)
 		return
 	}
@@ -175,11 +173,12 @@ func (r *referenceTypeResource) Read(ctx context.Context, req resource.ReadReque
 		return
 	}
 
-	referenceType, err := r.getReferenceType(ctx, state.Id.ValueString())
+	referenceType := new(referenceTypeScheme)
+	response, err := r.call(ctx, http.MethodGet, state.Id.ValueString(), nil, referenceType)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error during reference type reading",
-			err.Error(),
+			apiError(err, response),
 		)
 		return
 	}
@@ -207,11 +206,12 @@ func (r *referenceTypeResource) Update(ctx context.Context, req resource.UpdateR
 		Color:       plan.Color.ValueString(),
 	}
 
-	referenceType, err := r.updateReferenceType(ctx, plan.Id.ValueString(), payload)
+	referenceType := new(referenceTypeScheme)
+	response, err := r.call(ctx, http.MethodPut, plan.Id.ValueString(), payload, referenceType)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Error during reference type update",
-			err.Error(),
+			apiError(err, response),
 		)
 		return
 	}
@@ -233,10 +233,10 @@ func (r *referenceTypeResource) Delete(ctx context.Context, req resource.DeleteR
 		return
 	}
 
-	if err := r.deleteReferenceType(ctx, state.Id.ValueString()); err != nil {
+	if response, err := r.call(ctx, http.MethodDelete, state.Id.ValueString(), nil, nil); err != nil {
 		resp.Diagnostics.AddError(
 			"Error during reference type deletion",
-			err.Error(),
+			apiError(err, response),
 		)
 		return
 	}
@@ -246,106 +246,29 @@ func (r *referenceTypeResource) ImportState(ctx context.Context, req resource.Im
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-func (r *referenceTypeResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
-	}
-
-	providerClient, ok := req.ProviderData.(JiraAssetsProviderClient)
-	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected *assets.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
-		)
-		return
-	}
-
-	r.client = providerClient.client
-	r.workspace_id = providerClient.workspaceId
+func (r *referenceTypeResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	r.configure(req.ProviderData, &resp.Diagnostics)
 }
 
-func (r *referenceTypeResource) createReferenceType(ctx context.Context, payload referenceTypePayload) (*referenceTypeScheme, error) {
+// call sends one request to config/referencetype, or to config/referencetype/{id}
+// when id is set, decoding the response into out unless it is nil.
+func (r *referenceTypeResource) call(ctx context.Context, method, id string, payload any, out any) (*models.ResponseScheme, error) {
 	endpoint := fmt.Sprintf("jsm/assets/workspace/%v/v1/config/referencetype", r.workspace_id)
+	if id != "" {
+		endpoint += "/" + id
+	}
 
-	httpReq, err := r.client.NewRequest(ctx, http.MethodPost, endpoint, "", payload)
+	httpReq, err := r.client.NewRequest(ctx, method, endpoint, "", payload)
 	if err != nil {
 		return nil, err
 	}
 
-	referenceType := new(referenceTypeScheme)
-	response, err := r.client.Call(httpReq, referenceType)
+	response, err := r.client.Call(httpReq, out)
 	if err != nil {
-		logReferenceTypeError(ctx, "Error creating reference type", response, err)
-		return nil, err
+		logAPIError(ctx, fmt.Sprintf("Error calling %s %s", method, endpoint), response)
 	}
 
-	return referenceType, nil
-}
-
-func (r *referenceTypeResource) getReferenceType(ctx context.Context, id string) (*referenceTypeScheme, error) {
-	endpoint := fmt.Sprintf("jsm/assets/workspace/%v/v1/config/referencetype/%v", r.workspace_id, id)
-
-	httpReq, err := r.client.NewRequest(ctx, http.MethodGet, endpoint, "", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	referenceType := new(referenceTypeScheme)
-	response, err := r.client.Call(httpReq, referenceType)
-	if err != nil {
-		logReferenceTypeError(ctx, "Error reading reference type", response, err)
-		return nil, err
-	}
-
-	return referenceType, nil
-}
-
-func (r *referenceTypeResource) updateReferenceType(ctx context.Context, id string, payload referenceTypePayload) (*referenceTypeScheme, error) {
-	endpoint := fmt.Sprintf("jsm/assets/workspace/%v/v1/config/referencetype/%v", r.workspace_id, id)
-
-	httpReq, err := r.client.NewRequest(ctx, http.MethodPut, endpoint, "", payload)
-	if err != nil {
-		return nil, err
-	}
-
-	referenceType := new(referenceTypeScheme)
-	response, err := r.client.Call(httpReq, referenceType)
-	if err != nil {
-		logReferenceTypeError(ctx, "Error updating reference type", response, err)
-		return nil, err
-	}
-
-	return referenceType, nil
-}
-
-func (r *referenceTypeResource) deleteReferenceType(ctx context.Context, id string) error {
-	endpoint := fmt.Sprintf("jsm/assets/workspace/%v/v1/config/referencetype/%v", r.workspace_id, id)
-
-	httpReq, err := r.client.NewRequest(ctx, http.MethodDelete, endpoint, "", nil)
-	if err != nil {
-		return err
-	}
-
-	response, err := r.client.Call(httpReq, nil)
-	if err != nil {
-		logReferenceTypeError(ctx, "Error deleting reference type", response, err)
-		return err
-	}
-
-	return nil
-}
-
-func logReferenceTypeError(ctx context.Context, message string, response *models.ResponseScheme, err error) {
-	if response == nil {
-		return
-	}
-
-	tflog.Error(ctx, message, map[string]interface{}{
-		"url":         response.Request.URL,
-		"status_code": response.StatusCode,
-		"headers":     response.Header,
-		"body":        response.Body,
-	})
+	return response, err
 }
 
 func referenceTypeModelFromScheme(s *referenceTypeScheme) referenceTypeResourceModel {
