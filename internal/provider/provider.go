@@ -211,6 +211,9 @@ func (p *JiraAssetsProvider) Configure(ctx context.Context, req provider.Configu
 func (p *JiraAssetsProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewObjectResource,
+		NewObjectTypeResource,
+		NewObjectTypeAttributeResource,
+		NewReferenceTypeResource,
 	}
 }
 
