@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: go-generate
+        name: regenerate docs
+        language: system
+        entry: go generate ./...
+        files: ^(internal/provider/.*\.go|examples/.*|docs/.*|templates/.*|main\.go|scripts/generate\.sh)$
+        pass_filenames: false

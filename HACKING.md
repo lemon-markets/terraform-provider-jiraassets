@@ -4,6 +4,7 @@
 | --- | --- |
 | Build | `go install` |
 | Regenerate `docs/` | `go generate ./...` (needs `tofu` on `PATH`) |
+| Regenerate `docs/` on commit | `prek install` or `pre-commit install` |
 | Unit tests | `go test ./...` |
 | Acceptance tests | `make testacc` |
 
