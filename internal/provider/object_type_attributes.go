@@ -113,6 +113,15 @@ func (i *attributeInventory) findOwn(id, name string) *models.ObjectTypeAttribut
 	return i.ownByName[strings.ToLower(name)]
 }
 
+// idsByName maps every visible attribute's name, as the API holds it, to its id.
+func (i *attributeInventory) idsByName() map[string]string {
+	ids := make(map[string]string, len(i.visibleById))
+	for id, attribute := range i.visibleById {
+		ids[attribute.Name] = id
+	}
+	return ids
+}
+
 func (i *attributeInventory) findInherited(name string) *models.ObjectTypeAttributeScheme {
 	return i.inheritedName[strings.ToLower(name)]
 }
@@ -259,13 +268,15 @@ func (r *objectTypeResource) syncAttributes(ctx context.Context, objectTypeId st
 // the API currently holds. Inherited ones count: they are visible from here, and
 // their ids are what a value has to be written against. One deleted or retyped
 // out of band drops out, which is what puts it back in the plan.
-func (r *objectTypeResource) refreshAttributes(ctx context.Context, objectTypeId string, currentIds map[string]string) (map[string]string, map[string]string, diag.Diagnostics) {
+//
+// The third map is every visible attribute, for all_attribute_ids.
+func (r *objectTypeResource) refreshAttributes(ctx context.Context, objectTypeId string, currentIds map[string]string) (map[string]string, map[string]string, map[string]string, diag.Diagnostics) {
 	all := map[string]string{}
 	ids := map[string]string{}
 
 	inventory, diags := attributeInventoryFor(ctx, r.client, r.workspace_id, objectTypeId)
 	if diags.HasError() {
-		return all, ids, diags
+		return all, ids, map[string]string{}, diags
 	}
 
 	for _, id := range currentIds {
@@ -283,7 +294,7 @@ func (r *objectTypeResource) refreshAttributes(ctx context.Context, objectTypeId
 		ids[attribute.Name] = id
 	}
 
-	return all, ids, diags
+	return all, ids, inventory.idsByName(), diags
 }
 
 // inlineAttributePayload keeps the existing label flag: the API returns 400 when

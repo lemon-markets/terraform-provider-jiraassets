@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-validators/mapvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -31,6 +32,7 @@ var (
 
 var (
 	schemaPathAttributeIds = path.Root("attribute_ids")
+	schemaPathAllAttrIds   = path.Root("all_attribute_ids")
 	schemaPathInherited    = path.Root("inherited")
 )
 
@@ -66,6 +68,7 @@ type objectTypeResourceModel struct {
 	ObjectCount        types.Int64  `tfsdk:"object_count"`
 	Attributes         types.Map    `tfsdk:"attributes"`
 	AttributeIds       types.Map    `tfsdk:"attribute_ids"`
+	AllAttributeIds    types.Map    `tfsdk:"all_attribute_ids"`
 }
 
 // Schema defines the schema for the resource.
@@ -169,7 +172,12 @@ func (r *objectTypeResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"attribute_ids": schema.MapAttribute{
 				Computed:    true,
 				ElementType: types.StringType,
-				Description: "Attribute name to attribute id, for every entry in attributes. An attribute supplied by a parent reports the id it has on the object type that owns it, which is the id a value has to be written against.",
+				Description: "Attribute name to id for every entry in attributes. An inherited attribute reports the parent's id.",
+			},
+			"all_attribute_ids": schema.MapAttribute{
+				Computed:    true,
+				ElementType: types.StringType,
+				Description: "Attribute name to id for every attribute on this object type, including built-in, inherited and separately managed ones. Attributes created after the object type appear on the next refresh.",
 			},
 		},
 	}
@@ -191,6 +199,7 @@ func (r *objectTypeResource) ModifyPlan(ctx context.Context, req resource.Modify
 	desired, unknown := attributeMapFromValue(plan.Attributes)
 	if unknown {
 		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, schemaPathAttributeIds, types.MapUnknown(types.StringType))...)
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, schemaPathAllAttrIds, types.MapUnknown(types.StringType))...)
 		return
 	}
 
@@ -206,6 +215,11 @@ func (r *objectTypeResource) ModifyPlan(ctx context.Context, req resource.Modify
 		}
 
 		currentIds, _ = attributeMapFromValue(state.AttributeIds)
+
+		// Only the inline sync changes the attribute set during this resource's apply.
+		if plan.Attributes.Equal(state.Attributes) {
+			resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, schemaPathAllAttrIds, state.AllAttributeIds)...)
+		}
 	}
 
 	// A retype keeps the attribute, so only a new name gets an unknown id.
@@ -284,6 +298,7 @@ func (r *objectTypeResource) Create(ctx context.Context, req resource.CreateRequ
 	}
 
 	created.AttributeIds = attributeMapValue(ids)
+	created.AllAttributeIds = r.allAttributeIds(ctx, created.Id.ValueString(), &resp.Diagnostics)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, created)...)
 }
@@ -311,7 +326,7 @@ func (r *objectTypeResource) Read(ctx context.Context, req resource.ReadRequest,
 
 	refreshed := objectTypeModelFromScheme(objectType)
 
-	all, ids, diags := r.refreshAttributes(ctx, state.Id.ValueString(), currentIds)
+	all, ids, visible, diags := r.refreshAttributes(ctx, state.Id.ValueString(), currentIds)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -326,6 +341,7 @@ func (r *objectTypeResource) Read(ctx context.Context, req resource.ReadRequest,
 	}
 
 	refreshed.AttributeIds = attributeMapValue(ids)
+	refreshed.AllAttributeIds = attributeMapValue(visible)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, refreshed)...)
 }
@@ -375,6 +391,12 @@ func (r *objectTypeResource) Update(ctx context.Context, req resource.UpdateRequ
 	resp.Diagnostics.Append(diags...)
 
 	updated.AttributeIds = attributeMapValue(ids)
+	// A known plan value promised no change; re-listing could break that promise
+	// on an out-of-band edit, which the next refresh picks up anyway.
+	updated.AllAttributeIds = plan.AllAttributeIds
+	if plan.AllAttributeIds.IsUnknown() {
+		updated.AllAttributeIds = r.allAttributeIds(ctx, updated.Id.ValueString(), &resp.Diagnostics)
+	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, updated)...)
 }
@@ -405,6 +427,20 @@ func (r *objectTypeResource) ImportState(ctx context.Context, req resource.Impor
 
 func (r *objectTypeResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	r.configure(req.ProviderData, &resp.Diagnostics)
+}
+
+// allAttributeIds re-lists after a write. A failure is a warning: the object type
+// and its attributes are already written, and the next refresh fills the map in.
+func (r *objectTypeResource) allAttributeIds(ctx context.Context, objectTypeId string, diags *diag.Diagnostics) types.Map {
+	inventory, listDiags := attributeInventoryFor(ctx, r.client, r.workspace_id, objectTypeId)
+	if listDiags.HasError() {
+		for _, d := range listDiags.Errors() {
+			diags.AddWarning(d.Summary(), d.Detail())
+		}
+		return types.MapNull(types.StringType)
+	}
+
+	return attributeMapValue(inventory.idsByName())
 }
 
 func objectTypeModelFromScheme(o *models.ObjectTypeScheme) objectTypeResourceModel {
@@ -438,5 +474,6 @@ func objectTypeModelFromScheme(o *models.ObjectTypeScheme) objectTypeResourceMod
 		ObjectCount:        types.Int64Value(int64(o.ObjectCount)),
 		Attributes:         types.MapNull(types.StringType),
 		AttributeIds:       types.MapNull(types.StringType),
+		AllAttributeIds:    types.MapNull(types.StringType),
 	}
 }
