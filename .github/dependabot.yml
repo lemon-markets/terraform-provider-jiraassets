@@ -6,3 +6,23 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    groups:
+      gomod:
+        patterns: ["*"]
+      gomod-security:
+        applies-to: security-updates
+        patterns: ["*"]
+  # Only GoReleaser itself; its transitive deps follow its own go.mod.
+  - package-ecosystem: "gomod"
+    directory: "/tools/goreleaser"
+    schedule:
+      interval: "daily"
+    allow:
+      - dependency-name: "github.com/goreleaser/goreleaser/v2"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns: ["*"]
