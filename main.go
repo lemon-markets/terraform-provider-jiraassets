@@ -37,7 +37,7 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		Address: "registry.terraform.io/forevanyeung/jiraassets",
+		Address: "lemoneer.scalr.io/providers/jiraassets",
 		Debug:   debug,
 	}
 
