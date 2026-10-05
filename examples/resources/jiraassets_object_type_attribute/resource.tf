@@ -35,6 +35,14 @@ resource "jiraassets_object_type_attribute" "last_seen" {
   data_type      = "datetime"
 }
 
+# A fixed set of values.
+resource "jiraassets_object_type_attribute" "criticality" {
+  object_type_id = jiraassets_object_type.server.id
+  name           = "Criticality"
+  data_type      = "select"
+  options        = ["Low", "Medium", "High"]
+}
+
 # An unbounded list of integers.
 resource "jiraassets_object_type_attribute" "open_ports" {
   object_type_id      = jiraassets_object_type.server.id

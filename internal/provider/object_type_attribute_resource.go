@@ -3,11 +3,14 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/ctreminiom/go-atlassian/v2/pkg/infra/models"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -55,6 +58,7 @@ type objectTypeAttributeResourceModel struct {
 	Description        types.String `tfsdk:"description"`
 	Type               types.String `tfsdk:"type"`
 	DataType           types.String `tfsdk:"data_type"`
+	Options            types.List   `tfsdk:"options"`
 	TypeValue          types.String `tfsdk:"type_value"`
 	ReferenceTypeId    types.String `tfsdk:"reference_type_id"`
 	MinimumCardinality types.Int64  `tfsdk:"minimum_cardinality"`
@@ -72,9 +76,13 @@ var (
 	schemaPathType         = path.Root("type")
 	schemaPathDataType     = path.Root("data_type")
 	schemaPathTypeValue    = path.Root("type_value")
+	schemaPathOptions      = path.Root("options")
 
 	schemaPathIncludeChildren = path.Root("include_child_object_types")
 )
+
+// selectOptionPattern rejects what the API's comma-separated encoding would split or trim.
+var selectOptionPattern = regexp.MustCompile(`^[^,\s](?:[^,]*[^,\s])?$`)
 
 // Schema defines the schema for the resource.
 func (r *objectTypeAttributeResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
@@ -115,7 +123,7 @@ func (r *objectTypeAttributeResource) Schema(_ context.Context, _ resource.Schem
 				Optional:    true,
 				Computed:    true,
 				Default:     booldefault.StaticBool(false),
-				Description: "Marks this attribute as the object type's label. An object type has exactly one label, held at creation by the built-in Name attribute, so setting this adopts and renames that attribute instead of creating a second one: the API moves the label silently rather than erroring, which would otherwise leave Name behind as an unmanaged attribute.",
+				Description: "Marks this attribute as the object type's label. Setting it adopts and renames the built-in Name attribute, which holds the label.",
 				PlanModifiers: []planmodifier.Bool{
 					attributeLabelRequiresReplace(),
 				},
@@ -138,9 +146,22 @@ func (r *objectTypeAttributeResource) Schema(_ context.Context, _ resource.Schem
 			},
 			"data_type": schema.StringAttribute{
 				Optional:    true,
-				Description: "The stored data type, required when type is " + attrTypeDefault + ": " + strings.Join(sortedNames(dataTypes), ", ") + ". The API accepts a change here even when existing attribute values are incompatible with the new type (e.g. text to integer on a non-numeric value) with no validation or migration, so a clean plan does not guarantee safe data.",
+				Description: "The stored data type, required when type is " + attrTypeDefault + ": " + strings.Join(sortedNames(dataTypes), ", ") + ". Changing it does not convert existing values.",
 				Validators: []validator.String{
 					stringvalidator.OneOf(sortedNames(dataTypes)...),
+				},
+			},
+			"options": schema.ListAttribute{
+				Optional:    true,
+				ElementType: types.StringType,
+				Description: "The values a " + dataTypeSelect + " attribute offers, in display order. Required when data_type is " + dataTypeSelect + " and rejected otherwise. Values cannot contain commas.",
+				Validators: []validator.List{
+					listvalidator.SizeAtLeast(1),
+					listvalidator.UniqueValues(),
+					listvalidator.ValueStringsAre(
+						stringvalidator.LengthAtLeast(1),
+						stringvalidator.RegexMatches(selectOptionPattern, "must not contain a comma or start or end with whitespace"),
+					),
 				},
 			},
 			"type_value": schema.StringAttribute{
@@ -152,13 +173,13 @@ func (r *objectTypeAttributeResource) Schema(_ context.Context, _ resource.Schem
 			},
 			"reference_type_id": schema.StringAttribute{
 				Optional:    true,
-				Description: "For type = " + attrTypeObjectReference + ", the id of the jiraassets_reference_type describing the relationship. Wire name is additionalValue.",
+				Description: "For type = " + attrTypeObjectReference + ", the id of the jiraassets_reference_type.",
 			},
 			"minimum_cardinality": schema.Int64Attribute{
 				Optional:    true,
 				Computed:    true,
 				Default:     int64default.StaticInt64(0),
-				Description: "Minimum number of values for this attribute. Defaults to 0, matching the API.",
+				Description: "Minimum number of values. Defaults to 0.",
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.RequiresReplace(),
 				},
@@ -167,7 +188,7 @@ func (r *objectTypeAttributeResource) Schema(_ context.Context, _ resource.Schem
 				Optional:    true,
 				Computed:    true,
 				Default:     int64default.StaticInt64(1),
-				Description: "Maximum number of values for this attribute, -1 for unbounded. Defaults to 1, matching the API.",
+				Description: "Maximum number of values, -1 for unbounded. Defaults to 1.",
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.RequiresReplace(),
 				},
@@ -189,11 +210,11 @@ func (r *objectTypeAttributeResource) Schema(_ context.Context, _ resource.Schem
 				Optional:    true,
 				Computed:    true,
 				Default:     booldefault.StaticBool(false),
-				Description: "For type = " + attrTypeObjectReference + ", accepts objects of the target object type's children as values too, not only the target itself. Wire name is includeChildObjectTypes.",
+				Description: "For type = " + attrTypeObjectReference + ", also accepts objects of the target's child object types.",
 			},
 			"removable": schema.BoolAttribute{
 				Computed:    true,
-				Description: "Whether the API allows deleting this attribute. False for the four attributes every object type is born with (Key, Created, Updated, Name); destroying such a resource drops it from state and leaves it in place.",
+				Description: "Whether the attribute can be deleted. False for the built-in Key, Created, Updated and Name; destroying one removes it from state only.",
 			},
 		},
 	}
@@ -244,6 +265,24 @@ func (r *objectTypeAttributeResource) ValidateConfig(ctx context.Context, req re
 			"Unexpected data_type",
 			fmt.Sprintf("data_type only applies when type is %s, but type is %s.", attrTypeDefault, attrType),
 		)
+	}
+
+	if !config.DataType.IsUnknown() {
+		isSelect := attrType == attrTypeDefault && config.DataType.ValueString() == dataTypeSelect
+		if isSelect && config.Options.IsNull() {
+			resp.Diagnostics.AddAttributeError(
+				schemaPathOptions,
+				"Missing options",
+				fmt.Sprintf("options is required when data_type is %s: without it Jira offers nothing to choose from.", dataTypeSelect),
+			)
+		}
+		if !isSelect && !config.Options.IsNull() && !config.Options.IsUnknown() {
+			resp.Diagnostics.AddAttributeError(
+				schemaPathOptions,
+				"Unexpected options",
+				fmt.Sprintf("options only applies when data_type is %s.", dataTypeSelect),
+			)
+		}
 	}
 
 	// Nothing to descend into when the attribute does not point at an object type.
@@ -564,6 +603,12 @@ func objectTypeAttributePayloadFromModel(m objectTypeAttributeResourceModel) (*m
 		payload.DefaultTypeID = &wireDataType
 	}
 
+	if !m.Options.IsNull() {
+		var options []string
+		diags.Append(m.Options.ElementsAs(context.Background(), &options, false)...)
+		payload.Options = strings.Join(options, ",")
+	}
+
 	return payload, diags
 }
 
@@ -610,6 +655,15 @@ func objectTypeAttributeModelFromScheme(a *models.ObjectTypeAttributeScheme, obj
 		dataType = types.StringValue(name)
 	}
 
+	options := types.ListNull(types.StringType)
+	if dataType.ValueString() == dataTypeSelect && a.Options != "" {
+		values := make([]attr.Value, 0)
+		for _, option := range strings.Split(a.Options, ",") {
+			values = append(values, types.StringValue(strings.TrimSpace(option)))
+		}
+		options = types.ListValueMust(types.StringType, values)
+	}
+
 	return objectTypeAttributeResourceModel{
 		WorkspaceId:        types.StringValue(a.WorkspaceID),
 		GlobalId:           types.StringValue(a.GlobalID),
@@ -620,6 +674,7 @@ func objectTypeAttributeModelFromScheme(a *models.ObjectTypeAttributeScheme, obj
 		Description:        types.StringValue(a.Description),
 		Type:               types.StringValue(attrType),
 		DataType:           dataType,
+		Options:            options,
 		TypeValue:          optionalStringValue(typeValue),
 		ReferenceTypeId:    optionalStringValue(referenceTypeId),
 		MinimumCardinality: types.Int64Value(int64(a.MinimumCardinality)),

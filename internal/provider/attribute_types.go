@@ -23,18 +23,24 @@ var attributeTypes = map[string]int64{
 }
 
 // dataTypes maps a name to the wire value of "defaultTypeId", which is only
-// meaningful when type is default. 5, 7 and 8 are unassigned by the API.
+// meaningful when type is default. Codes are from the Assets Cloud OpenAPI spec.
 var dataTypes = map[string]int64{
 	"text":     0,
 	"integer":  1,
 	"boolean":  2,
 	"double":   3,
 	"date":     4,
+	"time":     5,
 	"datetime": 6,
+	"url":      7,
+	"email":    8,
 	"textarea": 9,
 	"select":   10,
 	"ip":       11,
 }
+
+// dataTypeSelect is the one data type that takes options.
+const dataTypeSelect = "select"
 
 // nameForCode reverses a wire value back to its configuration name, for Read.
 func nameForCode(m map[string]int64, code int64) (string, bool) {
