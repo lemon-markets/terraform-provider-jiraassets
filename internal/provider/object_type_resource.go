@@ -57,7 +57,7 @@ type objectTypeResourceModel struct {
 	IconId             types.String `tfsdk:"icon_id"`
 	ObjectSchemaId     types.String `tfsdk:"object_schema_id"`
 	ParentObjectTypeId types.String `tfsdk:"parent_object_type_id"`
-	AbstractObjectType types.Bool   `tfsdk:"abstract_object_type"`
+	AbstractObjectType types.Bool   `tfsdk:"abstract"`
 	Inherited          types.Bool   `tfsdk:"inherited"`
 	ParentInherited    types.Bool   `tfsdk:"parent_object_type_inherited"`
 	Position           types.Int64  `tfsdk:"position"`
@@ -121,7 +121,7 @@ func (r *objectTypeResource) Schema(_ context.Context, _ resource.SchemaRequest,
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
-			"abstract_object_type": schema.BoolAttribute{
+			"abstract": schema.BoolAttribute{
 				Optional:    true,
 				Computed:    true,
 				Default:     booldefault.StaticBool(false),

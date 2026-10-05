@@ -68,7 +68,7 @@ output "hostname_attribute_id" {
 
 ### Optional
 
-- `abstract_object_type` (Boolean) Prevents objects being created in this object type, leaving it as a holder of attributes for its children to inherit.
+- `abstract` (Boolean) Prevents objects being created in this object type, leaving it as a holder of attributes for its children to inherit.
 - `attributes` (Map of String) Plain attributes this object type owns, as attribute name to data type (boolean, date, datetime, double, integer, ip, select, text, textarea). An attribute needing a label, a reference, uniqueness, cardinality or a description is a jiraassets_object_type_attribute resource instead; do not declare the same name both ways. Attributes shared by several object types belong on a parent with inherited = true rather than being repeated here.
 - `description` (String)
 - `inherited` (Boolean) Passes this object type's attributes down to its child object types. Set it on the topmost object type and leave it unset below: the API turns it on for every descendant of an object type that has it. Forces replacement in either direction, since the API refuses to enable it on an object type that already has children and its payload cannot express disabling it.
