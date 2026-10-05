@@ -74,7 +74,7 @@ type objectTypeResourceModel struct {
 // Schema defines the schema for the resource.
 func (r *objectTypeResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "A Jira Assets object type resource. Deleting an object type that still has objects cascades: the objects become unreadable.",
+		Description: "A Jira Assets object type. Deleting it deletes its objects.",
 		Attributes: map[string]schema.Attribute{
 			"workspace_id": schema.StringAttribute{
 				Computed: true,
@@ -105,7 +105,7 @@ func (r *objectTypeResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			},
 			"icon_id": schema.StringAttribute{
 				Required:    true,
-				Description: "The ID of the icon of the object type. Required by the API at creation time.",
+				Description: "The ID of the object type's icon.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
@@ -119,7 +119,7 @@ func (r *objectTypeResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			},
 			"parent_object_type_id": schema.StringAttribute{
 				Optional:    true,
-				Description: "The ID of the parent object type. An object type has at most one parent and any number of children.",
+				Description: "The ID of the parent object type.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
@@ -136,14 +136,14 @@ func (r *objectTypeResource) Schema(_ context.Context, _ resource.SchemaRequest,
 			"inherited": schema.BoolAttribute{
 				Optional:    true,
 				Computed:    true,
-				Description: "Passes this object type's attributes down to its child object types. Set it on the topmost object type and leave it unset below: the API turns it on for every descendant of an object type that has it. Forces replacement in either direction, since the API refuses to enable it on an object type that already has children and its payload cannot express disabling it.",
+				Description: "Passes this object type's attributes to its descendants, which then report inherited = true. Set on the topmost object type only. Forces replacement.",
 				PlanModifiers: []planmodifier.Bool{
 					boolplanmodifier.RequiresReplace(),
 				},
 			},
 			"parent_object_type_inherited": schema.BoolAttribute{
 				Computed:    true,
-				Description: "Whether this object type was given a copy of its parent's attributes at creation, the UI's \"Add parent attributes\". Read-only: the object type payload cannot set it.",
+				Description: "Whether this object type was created with a copy of its parent's attributes (the UI's \"Add parent attributes\").",
 			},
 			"position": schema.Int64Attribute{
 				Computed: true,
@@ -164,7 +164,7 @@ func (r *objectTypeResource) Schema(_ context.Context, _ resource.SchemaRequest,
 				Optional:    true,
 				ElementType: types.StringType,
 				Description: "Plain attributes this object type owns, as attribute name to data type (" + strings.Join(sortedNames(dataTypes), ", ") +
-					"). An attribute needing a label, a reference, uniqueness, cardinality or a description is a jiraassets_object_type_attribute resource instead; do not declare the same name both ways. Attributes shared by several object types belong on a parent with inherited = true rather than being repeated here.",
+					"). Other attribute settings require jiraassets_object_type_attribute. Do not declare the same name both ways.",
 				Validators: []validator.Map{
 					mapvalidator.ValueStringsAre(stringvalidator.OneOf(sortedNames(dataTypes)...)),
 				},

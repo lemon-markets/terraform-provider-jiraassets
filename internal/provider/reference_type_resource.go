@@ -93,7 +93,7 @@ func (r *referenceTypeResource) Schema(_ context.Context, _ resource.SchemaReque
 			},
 			"id": schema.StringAttribute{
 				Computed:    true,
-				Description: "The ID of the reference type. Unlike object types and attributes, this is a UUID, not a small integer.",
+				Description: "The ID of the reference type.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
 				},
@@ -115,11 +115,8 @@ func (r *referenceTypeResource) Schema(_ context.Context, _ resource.SchemaReque
 				},
 			},
 			"object_schema_id": schema.StringAttribute{
-				Optional: true,
-				Description: "The object schema this reference type is scoped to. Omitted, the reference type is global. " +
-					"The API silently ignores changes to this on update -- PUT with a different value returns 200 with " +
-					"the OLD schema id still in the response body -- so it requires replacement rather than risking a " +
-					"schema move that looks applied but is not.",
+				Optional:    true,
+				Description: "The object schema this reference type is scoped to; global if omitted. Forces replacement.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},

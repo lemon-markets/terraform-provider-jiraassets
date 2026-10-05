@@ -3,12 +3,12 @@
 page_title: "jiraassets_reference_type Resource - terraform-provider-jiraassets"
 subcategory: ""
 description: |-
-  A Jira Assets reference type resource, used to describe the relationship an object reference attribute represents. Hand-rolled: the config/referencetype endpoint has no go-atlassian connector support.
+  A Jira Assets reference type, naming the relationship an object reference attribute represents.
 ---
 
 # jiraassets_reference_type (Resource)
 
-A Jira Assets reference type resource, used to describe the relationship an object reference attribute represents. Hand-rolled: the config/referencetype endpoint has no go-atlassian connector support.
+A Jira Assets reference type, naming the relationship an object reference attribute represents.
 
 ## Example Usage
 
@@ -37,12 +37,12 @@ resource "jiraassets_reference_type" "depends_on_ref" {
 
 - `color` (String) A hex color string, e.g. 42526E.
 - `description` (String)
-- `object_schema_id` (String) The object schema this reference type is scoped to. Omitted, the reference type is global. The API silently ignores changes to this on update -- PUT with a different value returns 200 with the OLD schema id still in the response body -- so it requires replacement rather than risking a schema move that looks applied but is not.
+- `object_schema_id` (String) The object schema this reference type is scoped to; global if omitted. Forces replacement.
 
 ### Read-Only
 
 - `global_id` (String)
-- `id` (String) The ID of the reference type. Unlike object types and attributes, this is a UUID, not a small integer.
+- `id` (String) The ID of the reference type.
 - `removable` (Boolean)
 - `workspace_id` (String)
 

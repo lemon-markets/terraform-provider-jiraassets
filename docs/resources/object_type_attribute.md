@@ -50,6 +50,14 @@ resource "jiraassets_object_type_attribute" "last_seen" {
   data_type      = "datetime"
 }
 
+# A fixed set of values.
+resource "jiraassets_object_type_attribute" "criticality" {
+  object_type_id = jiraassets_object_type.server.id
+  name           = "Criticality"
+  data_type      = "select"
+  options        = ["Low", "Medium", "High"]
+}
+
 # An unbounded list of integers.
 resource "jiraassets_object_type_attribute" "open_ports" {
   object_type_id      = jiraassets_object_type.server.id
@@ -58,9 +66,7 @@ resource "jiraassets_object_type_attribute" "open_ports" {
   maximum_cardinality = -1
 }
 
-# An object type has exactly one label, held at creation by the built-in Name
-# attribute. Setting label adopts and renames that attribute rather than adding
-# a second one, so taking it over needs no import.
+# Setting label adopts and renames the built-in Name attribute.
 resource "jiraassets_object_type_attribute" "asset_tag" {
   object_type_id   = jiraassets_object_type.server.id
   name             = "Asset Tag"
@@ -75,9 +81,8 @@ resource "jiraassets_reference_type" "owned_by" {
   object_schema_id = data.jiraassets_object_schema.inventory.id
 }
 
-# type_value is the target object type; reference_type_id labels what the
-# relationship means. include_child_object_types also accepts objects of the
-# target's children, here a Squad as well as a Team.
+# type_value is the target object type. include_child_object_types also
+# accepts its children, here a Squad as well as a Team.
 resource "jiraassets_object_type_attribute" "owner" {
   object_type_id             = jiraassets_object_type.server.id
   name                       = "Owner"
@@ -121,13 +126,14 @@ resource "jiraassets_object_type_attribute" "on_call" {
 
 ### Optional
 
-- `data_type` (String) The stored data type, required when type is default: boolean, date, datetime, double, integer, ip, select, text, textarea. The API accepts a change here even when existing attribute values are incompatible with the new type (e.g. text to integer on a non-numeric value) with no validation or migration, so a clean plan does not guarantee safe data.
+- `data_type` (String) The stored data type, required when type is default: boolean, date, datetime, double, email, integer, ip, select, text, textarea, time, url. Changing it does not convert existing values.
 - `description` (String)
-- `include_child_object_types` (Boolean) For type = object_reference, accepts objects of the target object type's children as values too, not only the target itself. Wire name is includeChildObjectTypes.
-- `label` (Boolean) Marks this attribute as the object type's label. An object type has exactly one label, held at creation by the built-in Name attribute, so setting this adopts and renames that attribute instead of creating a second one: the API moves the label silently rather than erroring, which would otherwise leave Name behind as an unmanaged attribute.
-- `maximum_cardinality` (Number) Maximum number of values for this attribute, -1 for unbounded. Defaults to 1, matching the API.
-- `minimum_cardinality` (Number) Minimum number of values for this attribute. Defaults to 0, matching the API.
-- `reference_type_id` (String) For type = object_reference, the id of the jiraassets_reference_type describing the relationship. Wire name is additionalValue.
+- `include_child_object_types` (Boolean) For type = object_reference, also accepts objects of the target's child object types.
+- `label` (Boolean) Marks this attribute as the object type's label. Setting it adopts and renames the built-in Name attribute, which holds the label.
+- `maximum_cardinality` (Number) Maximum number of values, -1 for unbounded. Defaults to 1.
+- `minimum_cardinality` (Number) Minimum number of values. Defaults to 0.
+- `options` (List of String) The values a select attribute offers, in display order. Required when data_type is select and rejected otherwise. Values cannot contain commas.
+- `reference_type_id` (String) For type = object_reference, the id of the jiraassets_reference_type.
 - `regex_validation` (String)
 - `suffix` (String)
 - `type` (String) The kind of attribute: default, group, object_reference, status, user. Defaults to default, which stores a value of data_type.
@@ -138,7 +144,7 @@ resource "jiraassets_object_type_attribute" "on_call" {
 
 - `global_id` (String)
 - `id` (String) The ID of the attribute.
-- `removable` (Boolean) Whether the API allows deleting this attribute. False for the four attributes every object type is born with (Key, Created, Updated, Name); destroying such a resource drops it from state and leaves it in place.
+- `removable` (Boolean) Whether the attribute can be deleted. False for the built-in Key, Created, Updated and Name; destroying one removes it from state only.
 - `workspace_id` (String)
 
 ## Import

@@ -51,9 +51,7 @@ resource "jiraassets_object_type_attribute" "open_ports" {
   maximum_cardinality = -1
 }
 
-# An object type has exactly one label, held at creation by the built-in Name
-# attribute. Setting label adopts and renames that attribute rather than adding
-# a second one, so taking it over needs no import.
+# Setting label adopts and renames the built-in Name attribute.
 resource "jiraassets_object_type_attribute" "asset_tag" {
   object_type_id   = jiraassets_object_type.server.id
   name             = "Asset Tag"
@@ -68,9 +66,8 @@ resource "jiraassets_reference_type" "owned_by" {
   object_schema_id = data.jiraassets_object_schema.inventory.id
 }
 
-# type_value is the target object type; reference_type_id labels what the
-# relationship means. include_child_object_types also accepts objects of the
-# target's children, here a Squad as well as a Team.
+# type_value is the target object type. include_child_object_types also
+# accepts its children, here a Squad as well as a Team.
 resource "jiraassets_object_type_attribute" "owner" {
   object_type_id             = jiraassets_object_type.server.id
   name                       = "Owner"

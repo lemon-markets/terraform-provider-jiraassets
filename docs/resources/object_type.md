@@ -3,12 +3,12 @@
 page_title: "jiraassets_object_type Resource - terraform-provider-jiraassets"
 subcategory: ""
 description: |-
-  A Jira Assets object type resource. Deleting an object type that still has objects cascades: the objects become unreadable.
+  A Jira Assets object type. Deleting it deletes its objects.
 ---
 
 # jiraassets_object_type (Resource)
 
-A Jira Assets object type resource. Deleting an object type that still has objects cascades: the objects become unreadable.
+A Jira Assets object type. Deleting it deletes its objects.
 
 ## Example Usage
 
@@ -17,10 +17,7 @@ data "jiraassets_object_schema" "inventory" {
   id = "100"
 }
 
-# Attributes shared by several object types go on an abstract parent, which holds
-# them for its children and cannot contain objects of its own. inherited passes
-# them down, and has to be set here at creation: the API refuses to enable it once
-# the object type has children.
+# An abstract parent holding attributes its children inherit.
 resource "jiraassets_object_type" "resource" {
   name             = "Resource"
   description      = "Everything in the inventory, whatever kind."
@@ -42,9 +39,7 @@ resource "jiraassets_object_type" "server" {
   object_schema_id      = data.jiraassets_object_schema.inventory.id
   parent_object_type_id = jiraassets_object_type.resource.id
 
-  # Only this object type's own columns. Owner and Last Seen At arrive by
-  # inheritance and stay owned by the parent, ids included, so they are not
-  # repeated here.
+  # Owner and Last Seen At are inherited from the parent.
   attributes = {
     "Hostname"       = "text"
     "CPU Cores"      = "integer"
@@ -62,26 +57,27 @@ output "hostname_attribute_id" {
 
 ### Required
 
-- `icon_id` (String) The ID of the icon of the object type. Required by the API at creation time.
+- `icon_id` (String) The ID of the object type's icon.
 - `name` (String) The name of the object type.
 - `object_schema_id` (String) The ID of the object schema this object type belongs to.
 
 ### Optional
 
 - `abstract` (Boolean) Prevents objects being created in this object type, leaving it as a holder of attributes for its children to inherit.
-- `attributes` (Map of String) Plain attributes this object type owns, as attribute name to data type (boolean, date, datetime, double, integer, ip, select, text, textarea). An attribute needing a label, a reference, uniqueness, cardinality or a description is a jiraassets_object_type_attribute resource instead; do not declare the same name both ways. Attributes shared by several object types belong on a parent with inherited = true rather than being repeated here.
+- `attributes` (Map of String) Plain attributes this object type owns, as attribute name to data type (boolean, date, datetime, double, email, integer, ip, select, text, textarea, time, url). Other attribute settings require jiraassets_object_type_attribute. Do not declare the same name both ways.
 - `description` (String)
-- `inherited` (Boolean) Passes this object type's attributes down to its child object types. Set it on the topmost object type and leave it unset below: the API turns it on for every descendant of an object type that has it. Forces replacement in either direction, since the API refuses to enable it on an object type that already has children and its payload cannot express disabling it.
-- `parent_object_type_id` (String) The ID of the parent object type. An object type has at most one parent and any number of children.
+- `inherited` (Boolean) Passes this object type's attributes to its descendants, which then report inherited = true. Set on the topmost object type only. Forces replacement.
+- `parent_object_type_id` (String) The ID of the parent object type.
 
 ### Read-Only
 
-- `attribute_ids` (Map of String) Attribute name to attribute id, for every entry in attributes. An attribute supplied by a parent reports the id it has on the object type that owns it, which is the id a value has to be written against.
+- `all_attribute_ids` (Map of String) Attribute name to id for every attribute on this object type, including built-in, inherited and separately managed ones. Attributes created after the object type appear on the next refresh.
+- `attribute_ids` (Map of String) Attribute name to id for every entry in attributes. An inherited attribute reports the parent's id.
 - `created` (String)
 - `global_id` (String)
 - `id` (String) The ID of the object type.
 - `object_count` (Number)
-- `parent_object_type_inherited` (Boolean) Whether this object type was given a copy of its parent's attributes at creation, the UI's "Add parent attributes". Read-only: the object type payload cannot set it.
+- `parent_object_type_inherited` (Boolean) Whether this object type was created with a copy of its parent's attributes (the UI's "Add parent attributes").
 - `position` (Number)
 - `updated` (String)
 - `workspace_id` (String)
