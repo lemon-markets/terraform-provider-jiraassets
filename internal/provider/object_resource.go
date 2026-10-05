@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ctreminiom/go-atlassian/assets"
-	"github.com/ctreminiom/go-atlassian/pkg/infra/models"
+	"github.com/ctreminiom/go-atlassian/v2/assets"
+	"github.com/ctreminiom/go-atlassian/v2/pkg/infra/models"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -198,8 +198,8 @@ func (r *objectResource) Create(ctx context.Context, req resource.CreateRequest,
 	}
 
 	// Map response body to schema and populate Computed attributes
-	plan.WorkspaceId = types.StringValue(object.WorkspaceId)
-	plan.GlobalId = types.StringValue(object.GlobalId)
+	plan.WorkspaceId = types.StringValue(object.WorkspaceID)
+	plan.GlobalId = types.StringValue(object.GlobalID)
 	plan.Id = types.StringValue(object.ID)
 	plan.Label = types.StringValue(object.Label)
 	plan.ObjectKey = types.StringValue(object.ObjectKey)
@@ -268,10 +268,17 @@ func (r *objectResource) Read(ctx context.Context, req resource.ReadRequest, res
 		// and "updated". we don't know the type id of those attributes, so we can't exclude them specifically
 
 		for i := range state.Attributes {
-			if state.Attributes[i].AttrTypeId == types.StringValue(attr.ObjectTypeAttributeId) {
+			if state.Attributes[i].AttrTypeId == types.StringValue(attr.ObjectTypeAttributeID) {
+				// attr_value is required in the schema; map a missing value to ""
+				// instead of dropping the attribute, which would shrink state.
+				value := ""
+				if len(attr.ObjectAttributeValues) > 0 {
+					value = attr.ObjectAttributeValues[0].Value
+				}
+
 				attributes = append(attributes, objectAttrResourceModel{
-					AttrTypeId: types.StringValue(attr.ObjectTypeAttributeId),
-					AttrValue:  types.StringValue(attr.ObjectAttributeValues[0].Value),
+					AttrTypeId: types.StringValue(attr.ObjectTypeAttributeID),
+					AttrValue:  types.StringValue(value),
 				})
 			}
 		}
@@ -279,8 +286,8 @@ func (r *objectResource) Read(ctx context.Context, req resource.ReadRequest, res
 
 	// Overwrite items in state with refreshed values
 	state.Attributes = attributes
-	state.WorkspaceId = types.StringValue(object.WorkspaceId)
-	state.GlobalId = types.StringValue(object.GlobalId)
+	state.WorkspaceId = types.StringValue(object.WorkspaceID)
+	state.GlobalId = types.StringValue(object.GlobalID)
 	state.Id = types.StringValue(object.ID)
 	state.Label = types.StringValue(object.Label)
 	state.ObjectKey = types.StringValue(object.ObjectKey)
@@ -349,8 +356,8 @@ func (r *objectResource) Update(ctx context.Context, req resource.UpdateRequest,
 	}
 
 	// Update resource state with updated object and attributes
-	plan.WorkspaceId = types.StringValue(object.WorkspaceId)
-	plan.GlobalId = types.StringValue(object.GlobalId)
+	plan.WorkspaceId = types.StringValue(object.WorkspaceID)
+	plan.GlobalId = types.StringValue(object.GlobalID)
 	plan.Id = types.StringValue(object.ID)
 	plan.Label = types.StringValue(object.Label)
 	plan.ObjectKey = types.StringValue(object.ObjectKey)
@@ -409,7 +416,7 @@ func (r *objectResource) Configure(ctx context.Context, req resource.ConfigureRe
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Data Source Configure Type",
-			fmt.Sprintf("Expected *hashicups.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+			fmt.Sprintf("Expected *assets.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
 		)
 		return
 	}

@@ -15,7 +15,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
-	"github.com/ctreminiom/go-atlassian/assets"
+	"github.com/ctreminiom/go-atlassian/v2/assets"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
@@ -92,7 +92,7 @@ func (p *JiraAssetsProvider) Configure(ctx context.Context, req provider.Configu
 
 	if config.WorkspaceId.IsUnknown() {
 		resp.Diagnostics.AddAttributeError(
-			path.Root("workspaceId"),
+			path.Root("workspace_id"),
 			"Unknown Assets Workspace Id",
 			"The provider cannot create the Assets API client as there is an unknown configuration value for the Assets API workspace Id. "+
 				"Either target apply the source of the value first, set the value statically in the configuration, or use the JIRAASSETS_WORKSPACE_ID environment variable.",
@@ -143,7 +143,7 @@ func (p *JiraAssetsProvider) Configure(ctx context.Context, req provider.Configu
 
 	if workspaceId == "" {
 		resp.Diagnostics.AddAttributeError(
-			path.Root("workspaceId"),
+			path.Root("workspace_id"),
 			"Missing Assets API Workspace Id",
 			"The provider cannot create the Assets API client as there is a missing or empty value for the Assets API workspace Id. "+
 				"Set the host value in the configuration or use the JIRAASSETS_WORKSPACE_ID environment variable. "+
@@ -180,7 +180,7 @@ func (p *JiraAssetsProvider) Configure(ctx context.Context, req provider.Configu
 	ctx = tflog.SetField(ctx, "jiraassets_password", password)
 	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "jiraassets_password")
 
-	tflog.Debug(ctx, "Creating HashiCups client")
+	tflog.Debug(ctx, "Creating Assets client")
 
 	// create the Jira Assets client
 	client, err := assets.New(nil, "")
@@ -190,6 +190,7 @@ func (p *JiraAssetsProvider) Configure(ctx context.Context, req provider.Configu
 			"Unable to create Assets client",
 			"An unexpected error occurred when creating the Assets API client. Error: "+err.Error(),
 		)
+		return
 	}
 
 	// add authentication headers to the client, workspaceId is added to each request

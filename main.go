@@ -13,15 +13,13 @@ import (
 	"terraform-provider-jiraassets/internal/provider"
 )
 
-// Run "go generate" to format example terraform files and generate the docs for the registry/website
-
-// If you do not have terraform installed, you can remove the formatting command, but its suggested to
-// ensure the documentation is formatted properly.
-//go:generate terraform fmt -recursive ./examples/
-
-// Run the docs generation tool, check its repository for more information on how it works and how docs
-// can be customized.
-//go:generate go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs
+// Run "go generate" to format the example configs and regenerate the docs.
+//
+// tfplugindocs would otherwise shell out to a terraform binary to export the
+// schema, and download one if absent. generate.sh instead exports the schema
+// with tofu and passes it in via -providers-schema, so no terraform is needed.
+//go:generate tofu fmt -recursive ./examples/
+//go:generate ./scripts/generate.sh
 
 var (
 	// these will be set by the goreleaser configuration

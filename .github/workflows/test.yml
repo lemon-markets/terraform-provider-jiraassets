@@ -42,15 +42,20 @@ jobs:
         with:
           go-version-file: "go.mod"
           cache: true
+      # go generate runs tofu fmt and scripts/generate.sh, which exports the
+      # schema with tofu rather than downloading a terraform binary.
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_wrapper: false
       - run: go generate ./...
       - name: git diff
         run: |
           git diff --compact-summary --exit-code || \
             (echo; echo "Unexpected difference in directories after code generation. Run 'go generate ./...' command and commit."; exit 1)
 
-  # Run acceptance tests with latest Terraform CLI version
+  # Run acceptance tests with the latest OpenTofu CLI version
   test:
-    name: Terraform Provider Acceptance Tests
+    name: Provider Acceptance Tests
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -60,15 +65,20 @@ jobs:
         with:
           go-version-file: "go.mod"
           cache: true
-      - uses: hashicorp/setup-terraform@633666f66e0061ca3b725c73b2ec20cd13a8fdd1 # v2.0.3
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
-          terraform_version: "latest"
-          terraform_wrapper: false
+          tofu_wrapper: false
       - run: go mod download
       - env:
           TF_ACC: "1"
+          # The harness defaults to a terraform binary and builds a reattach
+          # address under registry.terraform.io, which tofu rejects. The path
+          # must be absolute: it is used as an exact binary path, not looked up.
+          TF_ACC_PROVIDER_HOST: registry.opentofu.org
+          TF_ACC_PROVIDER_NAMESPACE: hashicorp
           JIRAASSETS_WORKSPACE_ID: ${{ secrets.JIRAASSETS_WORKSPACE_ID }}
           JIRAASSETS_USER: ${{ secrets.JIRAASSETS_USER }}
           JIRAASSETS_PASSWORD: ${{ secrets.JIRAASSETS_PASSWORD }}
-        run: go test -v -cover ./internal/provider/
+        run: |
+          TF_ACC_TERRAFORM_PATH="$(command -v tofu)" go test -v -cover ./internal/provider/
         timeout-minutes: 10

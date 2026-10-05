@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ctreminiom/go-atlassian/assets"
+	"github.com/ctreminiom/go-atlassian/v2/assets"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -131,9 +131,9 @@ func (d *objectSchemaDataSource) Read(ctx context.Context, req datasource.ReadRe
 	}
 
 	state = objectSchemaDataSourceModel{
-		WorkspaceId:     types.StringValue(schema.WorkspaceId),
-		GlobalId:        types.StringValue(schema.GlobalId),
-		Id:              types.StringValue(schema.Id),
+		WorkspaceId:     types.StringValue(schema.WorkspaceID),
+		GlobalId:        types.StringValue(schema.GlobalID),
+		Id:              types.StringValue(schema.ID),
 		Name:            types.StringValue(schema.Name),
 		ObjectSchemaKey: types.StringValue(schema.ObjectSchemaKey),
 		Status:          types.StringValue(schema.Status),
