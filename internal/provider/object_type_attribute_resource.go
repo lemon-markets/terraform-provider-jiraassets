@@ -36,7 +36,8 @@ var (
 	_ resource.ResourceWithModifyPlan     = &objectTypeAttributeResource{}
 )
 
-// maxUniqueAttributes is how many unique attributes the API allows per object type.
+// maxUniqueAttributes is how many unique attributes the API allows per object type,
+// inherited ones included.
 const maxUniqueAttributes = 2
 
 // NewObjectTypeAttributeResource is a helper function to simplify the provider implementation.
@@ -377,21 +378,31 @@ func (r *objectTypeAttributeResource) ModifyPlan(ctx context.Context, req resour
 	}
 
 	if becomesUnique {
-		var unique []string
-		for _, attribute := range inventory.ownById {
-			if attribute.UniqueAttribute && (state == nil || attribute.ID != state.Id.ValueString()) {
-				unique = append(unique, fmt.Sprintf("%q (id %s)", attribute.Name, attribute.ID))
-			}
+		selfId := ""
+		if state != nil {
+			selfId = state.Id.ValueString()
 		}
-		if len(unique) >= maxUniqueAttributes {
-			sort.Strings(unique)
+		if unique := inventory.otherUniqueAttributes(selfId); len(unique) >= maxUniqueAttributes {
 			resp.Diagnostics.AddAttributeError(
 				schemaPathUnique,
 				"Too many unique attributes",
-				fmt.Sprintf("Object type %s already has %d unique attributes (%s), and the API allows at most %d.", objectTypeId, len(unique), strings.Join(unique, ", "), maxUniqueAttributes),
+				fmt.Sprintf("Object type %s already has %d unique attributes, inherited ones included (%s), and the API allows at most %d.", objectTypeId, len(unique), strings.Join(unique, ", "), maxUniqueAttributes),
 			)
 		}
 	}
+}
+
+// otherUniqueAttributes lists the unique attributes the object type sees, inherited
+// ones included, other than selfId.
+func (i *attributeInventory) otherUniqueAttributes(selfId string) []string {
+	var unique []string
+	for _, attribute := range i.visibleById {
+		if attribute.UniqueAttribute && attribute.ID != selfId {
+			unique = append(unique, fmt.Sprintf("%q (id %s)", attribute.Name, attribute.ID))
+		}
+	}
+	sort.Strings(unique)
+	return unique
 }
 
 const inheritedLabelSummary = "Cannot label an attribute on an inherited child object type"

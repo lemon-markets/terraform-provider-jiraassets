@@ -59,8 +59,8 @@ Reference docs are in [`docs/`](./docs).
 - `abstract = true` prevents objects in an object type.
 - `include_child_object_types` on a reference accepts objects of the target's children.
 - Removing a name from an object type's `attributes` deletes that attribute and its values.
-- An object type can have at most two unique attributes, and a unique attribute must have
-  `maximum_cardinality = 1`.
+- An object type can have at most two unique attributes, inherited ones included, and a unique
+  attribute must have `maximum_cardinality = 1`.
 - If an inline attribute fails during create, the object type stays in state but is tainted.
   Untaint it and apply again; replacing it would delete its objects.
 

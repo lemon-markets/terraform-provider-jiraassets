@@ -181,3 +181,20 @@ func TestAttributeInventoryIdsByName(t *testing.T) {
 		t.Errorf("idsByName() = %v", got)
 	}
 }
+
+func TestAttributeInventoryOtherUniqueAttributes(t *testing.T) {
+	t.Parallel()
+
+	inventory := &attributeInventory{visibleById: map[string]*models.ObjectTypeAttributeScheme{
+		"10": {ID: "10", Name: "Name"},
+		"11": {ID: "11", Name: "Serial", UniqueAttribute: true},
+		"12": {ID: "12", Name: "Asset Tag", UniqueAttribute: true, ObjectType: &models.ObjectTypeScheme{ID: "parent"}},
+	}}
+
+	if got := inventory.otherUniqueAttributes(""); len(got) != 2 {
+		t.Errorf("otherUniqueAttributes(\"\") = %v, want the own and the inherited one", got)
+	}
+	if got := inventory.otherUniqueAttributes("11"); len(got) != 1 || got[0] != `"Asset Tag" (id 12)` {
+		t.Errorf("otherUniqueAttributes(\"11\") = %v", got)
+	}
+}
