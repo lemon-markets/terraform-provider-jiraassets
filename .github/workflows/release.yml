@@ -85,7 +85,9 @@ jobs:
         run: |
           mkdir pkg
           cp dist/*.zip dist/*_SHA256SUMS dist/*_SHA256SUMS.sig pkg/
-          cp terraform-registry-manifest.json README.md CHANGELOG.md pkg/
+          cp README.md CHANGELOG.md pkg/
+          # Scalr reads protocol_versions at the top level, not under metadata.
+          jq '.protocol_versions = .metadata.protocol_versions' terraform-registry-manifest.json >pkg/terraform-registry-manifest.json
           # Scalr rejects unknown top-level entries, so no leading "./".
           (cd pkg && tar -czf ../release.tar.gz -- *)
           tar -tzf release.tar.gz
