@@ -1,12 +1,16 @@
 package provider
 
 import (
+	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
 func TestAccJiraAssetsObjectResource(t *testing.T) {
+	if os.Getenv("JIRAASSETS_WORKSPACE_ID") == "" {
+		t.Skip("JIRAASSETS_WORKSPACE_ID and credentials must be set")
+	}
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
