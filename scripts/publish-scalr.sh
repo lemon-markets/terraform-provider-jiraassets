@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Publishes a GitHub release to the Scalr provider registry, from an IP Scalr allows.
-# Usage: op run --environment <env> -- scripts/publish-scalr.sh v1.2.3
+# Usage: op run --environment <env> -- scripts/publish-scalr.sh v1.2.3 [release.tar.gz]
 set -euo pipefail
 
 tag=${1:?usage: $0 <tag>}
@@ -15,9 +15,13 @@ call() {
   printf '%s\n' "$body"
 }
 
-dir=$(mktemp -d)
-trap 'rm -rf "$dir"' EXIT
-gh release download "$tag" -R lemon-markets/terraform-provider-jiraassets -p release.tar.gz -D "$dir"
+tarball=${2:-}
+if [[ -z "$tarball" ]]; then
+  dir=$(mktemp -d)
+  trap 'rm -rf "$dir"' EXIT
+  gh release download "$tag" -R lemon-markets/terraform-provider-jiraassets -p release.tar.gz -D "$dir"
+  tarball="$dir/release.tar.gz"
+fi
 
 version=$(jq -n --arg v "${tag#v}" --arg p "$provider_id" --arg g "$gpg_key_id" '{data: {
     type: "provider-versions",
@@ -29,7 +33,7 @@ version=$(jq -n --arg v "${tag#v}" --arg p "$provider_id" --arg g "$gpg_key_id" 
 id=$(jq -r .data.id <<<"$version")
 upload=$(jq -r .data.links.upload <<<"$version")
 
-curl -fsS -X PUT --upload-file "$dir/release.tar.gz" "$upload"
+curl -fsS -X PUT --upload-file "$tarball" "$upload"
 
 for _ in $(seq 60); do
   attrs=$(call "${api}/provider-versions/${id}" | jq .data.attributes)

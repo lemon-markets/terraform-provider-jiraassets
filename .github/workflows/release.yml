@@ -85,9 +85,8 @@ jobs:
         run: |
           mkdir pkg
           cp dist/*.zip dist/*_SHA256SUMS dist/*_SHA256SUMS.sig pkg/
+          # No manifest: Scalr rejects the standard one, and tofu negotiates protocol 6 anyway.
           cp README.md CHANGELOG.md pkg/
-          # Scalr reads protocol_versions at the top level, not under metadata.
-          jq '.protocol_versions = .metadata.protocol_versions' terraform-registry-manifest.json >pkg/terraform-registry-manifest.json
           # Scalr rejects unknown top-level entries, so no leading "./".
           (cd pkg && tar -czf ../release.tar.gz -- *)
           tar -tzf release.tar.gz
