@@ -99,12 +99,18 @@ jobs:
         run: |
           set -euo pipefail
           api="https://${SCALR_HOSTNAME}/api/iacp/v3"
+          # Report the failing URL and Scalr's error body; curl -f alone prints only the status.
+          call() {
+            local body
+            body=$(curl -sS --fail-with-body "$@") || { echo "::error::${*: -1}: ${body}" >&2; return 1; }
+            printf '%s\n' "$body"
+          }
 
-          id_token=$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+          id_token=$(call -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${SCALR_HOSTNAME}" | jq -r .value)
           token=$(jq -n --arg e "$SCALR_SERVICE_ACCOUNT" --arg t "$id_token" \
               '{"service-account-email": $e, "id-token": $t}' |
-            curl -fsS -X POST -H 'Content-Type: application/json' --data @- \
+            call -X POST -H 'Content-Type: application/json' --data @- \
               "${api}/service-accounts/assume" | jq -r '."access-token"')
           echo "::add-mask::${token}"
 
@@ -114,7 +120,7 @@ jobs:
               relationships: {
                 provider: {data: {type: "providers", id: $p}},
                 "gpg-key": {data: {type: "gpg-keys", id: $g}}}}}' |
-            curl -fsS -X POST -H "Authorization: Bearer ${token}" \
+            call -X POST -H "Authorization: Bearer ${token}" \
               -H 'Content-Type: application/vnd.api+json' --data @- "${api}/provider-versions")
           id=$(jq -r .data.id <<<"$version")
           upload=$(jq -r .data.links.upload <<<"$version")
@@ -122,7 +128,7 @@ jobs:
           curl -fsS -X PUT --upload-file release.tar.gz "$upload"
 
           for _ in $(seq 60); do
-            attrs=$(curl -fsS -H "Authorization: Bearer ${token}" "${api}/provider-versions/${id}" | jq .data.attributes)
+            attrs=$(call -H "Authorization: Bearer ${token}" "${api}/provider-versions/${id}" | jq .data.attributes)
             case $(jq -r .status <<<"$attrs") in
               uploaded) echo "Published ${GITHUB_REF_NAME} as ${id}"; exit 0 ;;
               errored) echo "::error::$(jq -r '."error-message"' <<<"$attrs")"; exit 1 ;;
