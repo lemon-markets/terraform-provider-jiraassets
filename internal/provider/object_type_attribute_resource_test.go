@@ -22,7 +22,10 @@ func attributeConfig(t *testing.T, values map[string]tftypes.Value) tfsdk.Config
 	var schemaResp resource.SchemaResponse
 	r.Schema(context.Background(), resource.SchemaRequest{}, &schemaResp)
 
-	objectType := schemaResp.Schema.Type().TerraformType(context.Background()).(tftypes.Object)
+	objectType, ok := schemaResp.Schema.Type().TerraformType(context.Background()).(tftypes.Object)
+	if !ok {
+		t.Fatal("resource schema is not an object type")
+	}
 	all := make(map[string]tftypes.Value, len(objectType.AttributeTypes))
 	for name, typ := range objectType.AttributeTypes {
 		if v, ok := values[name]; ok {
