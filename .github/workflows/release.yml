@@ -1,15 +1,46 @@
 # Builds, signs and publishes a "v*" tag to the Scalr private provider registry.
+# Branch pushes only get an unsigned snapshot build, outside the release environment.
 name: Release
 
 on:
   push:
+    branches:
+      - "**"
     tags:
       - "v*"
 
 permissions: {}
 
 jobs:
+  build:
+    if: github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: "tools/goreleaser/go.mod"
+          cache: false
+      - name: Build GoReleaser
+        working-directory: tools/goreleaser
+        run: go build -o "${RUNNER_TEMP}/goreleaser" github.com/goreleaser/goreleaser/v2
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: "go.mod"
+          cache: false
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+        run: '"${RUNNER_TEMP}/goreleaser" release --clean --snapshot --skip=sign'
+
   release:
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Signing secrets and the Scalr OIDC trust are scoped to this environment.
@@ -23,24 +54,31 @@ jobs:
           # Allow goreleaser to access older tag information.
           fetch-depth: 0
           persist-credentials: false
+      # GoReleaser is pinned in tools/goreleaser/go.mod so Dependabot bumps it; its
+      # Go floor can outrun ours, so build it with its own toolchain first.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: "tools/goreleaser/go.mod"
+          # Avoid a cache poisoned by other workflows leaking into signed builds.
+          cache: false
+      - name: Build GoReleaser
+        working-directory: tools/goreleaser
+        run: go build -o "${RUNNER_TEMP}/goreleaser" github.com/goreleaser/goreleaser/v2
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: "go.mod"
-          # Avoid a cache poisoned by other workflows leaking into signed builds.
           cache: false
       - name: Build and sign
         env:
           CGO_ENABLED: "0"
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           PASSPHRASE: ${{ secrets.PASSPHRASE }}
-        # GoReleaser is pinned in tools/goreleaser/go.mod so Dependabot bumps it.
         run: |
           export GNUPGHOME="${RUNNER_TEMP}/gnupg"
           install -d -m 700 "$GNUPGHOME"
           gpg --batch --import <<<"$GPG_PRIVATE_KEY"
           GPG_FINGERPRINT=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ {print $10; exit}')
           export GPG_FINGERPRINT
-          (cd tools/goreleaser && go build -o "${RUNNER_TEMP}/goreleaser" github.com/goreleaser/goreleaser/v2)
           "${RUNNER_TEMP}/goreleaser" release --clean
 
       - name: Package release tarball
